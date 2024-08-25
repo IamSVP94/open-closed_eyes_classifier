@@ -9,4 +9,4 @@ random.seed(SEED)  # unified seed
 
 BASE_DIR = Path(__file__).absolute().parent.parent
 AVAIL_GPUS = min(1, torch.cuda.device_count())
-NUM_WORKERS = 5  # max 16 for pc in the office
+NUM_WORKERS = 8  # max 16 for pc in the office
