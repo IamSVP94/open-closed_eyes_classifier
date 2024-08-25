@@ -16,7 +16,7 @@ from src import BASE_DIR, AVAIL_GPUS, SEED, NUM_WORKERS, glob_search, CustomData
 # DATASET
 DATASET_DIR = Path('/home/iamsvp/data/eye/EyesDataset/marked/')
 imgs = glob_search(DATASET_DIR)
-labels = [1 if p.parent.parent.name == 'open' else 0 for p in imgs]  # according to the problem conditions
+labels = [1 if p.parent.name == 'open' else 0 for p in imgs]  # according to the problem conditions
 train_imgs, val_imgs, train_labels, val_labels = train_test_split(imgs, labels, test_size=0.2, random_state=SEED)
 print(f'train: {len(train_imgs)}, val: {len(val_imgs)}')
 
@@ -26,9 +26,10 @@ logdir = BASE_DIR / 'logs/'
 logdir.mkdir(parents=True, exist_ok=True)
 
 EPOCHS = 500
-start_learning_rate = 1e-3
-BATCH_SIZE = 50000 if AVAIL_GPUS else 1
+start_learning_rate = 1e-2
+BATCH_SIZE = int(len(train_imgs) / 2 + 1) if AVAIL_GPUS else 1
 DEVICE = 'cuda' if AVAIL_GPUS else 'cpu'
+MODE = "classification"
 
 # AUGMENTATIONS
 train_transforms = [
@@ -46,8 +47,8 @@ val_transforms = [
 ]
 
 # DATASETS
-train = CustomDataset(imgs=train_imgs, labels=train_labels, augmentation=train_transforms)
-val = CustomDataset(imgs=val_imgs, labels=val_labels, augmentation=val_transforms)
+train = CustomDataset(imgs=train_imgs, labels=train_labels, mode=MODE, augmentation=train_transforms)
+val = CustomDataset(imgs=val_imgs, labels=val_labels, mode=MODE, augmentation=val_transforms)
 
 train_loader = DataLoader(train, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS, drop_last=False)
 val_loader = DataLoader(val, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS, drop_last=False)
@@ -67,12 +68,12 @@ exit()
 tb_logger = TensorBoardLogger(save_dir=logdir, name=EXPERIMENT_NAME)
 lr_monitor = LearningRateMonitor(logging_interval='epoch')
 # METRICS
-metrics_callback = MetricSMPCallback(metrics={
+metrics_callback = MetricSMPCallback(threshold=None, mode=MODE, metrics={
     'accuracy': torchmetrics.classification.Accuracy(task="binary").to(device=DEVICE),
     'precision': torchmetrics.classification.Precision(task="binary").to(device=DEVICE),
     'recall': torchmetrics.classification.Recall(task="binary").to(device=DEVICE),
     'F1score': torchmetrics.classification.F1Score(task="binary").to(device=DEVICE),
-}, log_img=False, save_img=False, threshold=0.5)
+})
 best_loss_saver = ModelCheckpoint(
     mode='min', save_top_k=1, save_last=True, monitor='loss/validation',
     auto_insert_metric_name=False, filename='epoch={epoch:02d}-val_loss={loss/validation:.4f}',
@@ -83,13 +84,12 @@ best_metric_saver = ModelCheckpoint(
 )
 
 # MODEL
-model = CustomNet(activation=nn.GELU)
+model = CustomNet(activation=nn.GELU, mode=MODE)
 # model = EyeClassifier()
 model_pl = Classifier_pl(
     model=model,
-    # loss_fn=torch.nn.MSELoss(),
-    loss_fn=torch.nn.HuberLoss(),
-    # loss_fn=torch.nn.L1Loss(),
+    # loss_fn=torch.nn.HuberLoss(),
+    loss_fn=torch.nn.CrossEntropyLoss(),
     start_learning_rate=start_learning_rate,
     max_epochs=EPOCHS
 )

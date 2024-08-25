@@ -6,7 +6,7 @@ import numpy as np
 import seaborn as sns
 from pathlib import Path
 import albumentations as A
-from typing import List, Tuple
+from typing import List, Tuple, Union
 import pytorch_lightning as pl
 import matplotlib.pyplot as plt
 from torch.utils.data import Dataset
@@ -41,7 +41,9 @@ final_transforms = [
 
 
 class CustomDataset(Dataset):
-    def __init__(self, imgs: List[str], labels: List[int], augmentation=None) -> None:
+    def __init__(self, imgs: List[str], labels: List[int], mode: str = "regression", augmentation=None) -> None:
+        assert mode in ['classification', 'regression']
+        self.mode = mode
         self.imgs = imgs
         self.labels = labels
 
@@ -56,9 +58,12 @@ class CustomDataset(Dataset):
     def __getitem__(self, item: int) -> Tuple:
         img_path = self.imgs[item]
         img = cv2.imread(str(img_path), cv2.IMREAD_UNCHANGED)  # BGR
-        label = torch.Tensor([self.labels[item]]).to(torch.float32)
-        # apply augmentations
         img = self.augmentation(image=img)['image']
+        if self.mode == 'classification':
+            label = torch.Tensor([self.labels[item]]).to(torch.int64)
+        else:
+            label = torch.Tensor([self.labels[item]]).to(torch.float32)
+        # apply augmentations
         return img, label
 
 
@@ -136,6 +141,8 @@ class Classifier_pl(pl.LightningModule):
     def _shared_step(self, batch, stage):
         imgs, gts = batch
         preds = self.forward(imgs)
+        if self.model.mode == 'classification':
+            gts = gts.squeeze(dim=1)
         loss = self.loss_fn(preds, gts)
         self.log(f'loss/{stage}', loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
         return {'loss': loss, 'preds': preds}
@@ -143,30 +150,32 @@ class Classifier_pl(pl.LightningModule):
 
 class MetricSMPCallback(pl.Callback):
     def __init__(self, metrics, activation=None,
-                 log_img: bool = False,
-                 save_img: bool = False,
-                 threshold: float = 0.5,
-                 n_img_check_per_epoch_validation: int = 0,
-                 n_img_check_per_epoch_train: int = 0,
+                 threshold: Union[float, None] = 0.5,
+                 mode: str = 'regression',
                  ) -> None:
+        assert mode in ['classification', 'regression']
+        self.mode = mode
         self.metrics = metrics
         self.threshold = threshold
         if activation is not None:
             self.activation = activation
         else:
             self.activation = torch.nn.Identity()
-        self.log_img = log_img
-        self.save_img = save_img
-        self.n_img_check_per_epoch_validation = n_img_check_per_epoch_validation
-        self.n_img_check_per_epoch_train = n_img_check_per_epoch_train
 
     @torch.no_grad()
     def _get_metrics(self, preds, gts, trainer):
         metric_results = {k: dict() for k in self.metrics}
         labels = self.activation(preds)
-        preds = (labels >= self.threshold).to(torch.int8)
+        if self.mode == 'classification':
+            preds = torch.argmax(labels, dim=1).to(torch.float32).unsqueeze(1)
+        elif self.mode == 'regression':
+            preds = (labels >= self.threshold).to(torch.int8)
+        # print(166, preds, gts)
+        # print(167, preds.shape, gts.shape)
         for m_name, metric in self.metrics.items():
-            metric_results[m_name] = round(metric(preds, gts).item(), 4)
+            result = metric(preds, gts)
+            metric_results[m_name] = round(result.item(), 4)
+            # print(170, m_name, metric_results[m_name])
         return metric_results
 
     @torch.no_grad()

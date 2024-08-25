@@ -10,19 +10,32 @@ from src.utils_pl import final_transforms
 
 
 class CustomNet(nn.Module):
-    def __init__(self, in_channels=1, activation=nn.ReLU):
+    def __init__(self, in_channels=1, activation=nn.ReLU, mode: str = "regression"):
+        assert mode in ["classification", "regression"]
         super(CustomNet, self).__init__()
 
         self.block1 = self._make_block(in_channels, 16, activation)
         self.block2 = self._make_block(16 + 1, 64, activation)  # +1 cause residual
         self.block3 = self._make_block(64 + 1, 32, activation)  # +1 cause residual
         self.block4 = self._make_block(32 + 1, 16, activation)  # +1 cause residual
-        self.fc = nn.Sequential(
+
+        self.mode = mode
+        fc = [
             nn.Flatten(1),
             nn.Dropout(p=0.3),
-            nn.Linear(16 * 24 * 24, 1),
-            nn.Sigmoid(),  # regression (probabilities)
-        )
+        ]
+
+        if self.mode == "classification":
+            fc.extend([
+                nn.Linear(16 * 24 * 24, 2),
+                nn.Softmax(dim=1),
+            ])
+        elif self.mode == "regression":
+            fc.extend([
+                nn.Linear(16 * 24 * 24, 1),
+                nn.Sigmoid(),
+            ])
+        self.fc = nn.Sequential(*fc)
 
     def _make_block(self, in_channels, out_channels, activation):
         block = nn.Sequential(
@@ -46,17 +59,20 @@ class OpenEyesClassificator:
                  pretrained: str,
                  device: str = "cuda",
                  augmentation: Union[List, None] = None,
-                 ):
-        if augmentation is None:
-            augmentation = []
-        augmentation.extend(final_transforms)
-        self.augmentation = A.Compose(augmentation)
+                 mode: str = "regression"):
+        assert mode in ["classification", "regression"]
+        self.mode = mode
         self.device = device
         self.model = self.load_model(pretrained)
         self.model.eval()
 
+        if augmentation is None:
+            augmentation = []
+        augmentation.extend(final_transforms)
+        self.augmentation = A.Compose(augmentation)
+
     def load_model(self, path) -> nn.Module:
-        state_dict = torch.load(str(path))['state_dict']
+        state_dict = torch.load(str(path), weights_only=False)['state_dict']
         remove_prefix = 'model.'
         state_dict = {k[len(remove_prefix):] if k.startswith(remove_prefix) else k: v for k, v in state_dict.items()}
         model = CustomNet()
@@ -86,4 +102,4 @@ if __name__ == '__main__':  # testing
         pretrained="/home/iamsvp/PycharmProjects/open-closed_eyes_classifier/logs/eyes_classifier/version_1/checkpoints/epoch=114-val_loss=0.9930.ckpt")
     inpIm = "/home/iamsvp/data/eye/EyesDataset/0/000001.jpg"
     result = model.predict(inpIm)
-    plt_show_img(cv2.imread(inpIm, cv2.IMREAD_GRAYSCALE), add_coef=True, title=result)
+    plt_show_img(cv2.imread(inpIm, cv2.IMREAD_GRAYSCALE), add_coef=True, title=str(result))
