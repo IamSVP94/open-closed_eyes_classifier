@@ -75,7 +75,7 @@ class OpenEyesClassificator:
         state_dict = torch.load(str(path), weights_only=False)['state_dict']
         remove_prefix = 'model.'
         state_dict = {k[len(remove_prefix):] if k.startswith(remove_prefix) else k: v for k, v in state_dict.items()}
-        model = CustomNet()
+        model = CustomNet(mode=self.mode)
         model.load_state_dict(state_dict)
         model.to(self.device)
         return model
@@ -89,6 +89,8 @@ class OpenEyesClassificator:
     def predict(self, inpIm: str) -> float:  # inference
         x = self.get_tensor(inpIm)
         is_open_score = self.model(x)
+        if self.mode == "classification":
+            is_open_score = is_open_score.squeeze()[1]
         return is_open_score.item()
 
 
