@@ -81,7 +81,7 @@ def max_show_img_size_reshape(img, max_show_img_size, return_coef=False):  # h,w
 def plt_show_img(img,
                  title: str = None,
                  add_coef: bool = False,
-                 mode: str = 'plt',
+                 mode: str = 'cv2',
                  max_img_size: Tuple[str] = (900, 1800)) -> None:
     """
     Display an image using either matplotlib or OpenCV.
