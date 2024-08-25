@@ -6,11 +6,14 @@ import numpy as np
 import seaborn as sns
 from pathlib import Path
 import albumentations as A
-from typing import List, Tuple, Union
+from typing import List, Tuple, Union, Optional
 import pytorch_lightning as pl
 import matplotlib.pyplot as plt
+import torchmetrics
 from torch.utils.data import Dataset
 from sklearn.metrics import confusion_matrix
+from torchmetrics import Metric
+from torchmetrics.classification.base import _ClassificationTaskWrapper
 from warmup_scheduler import GradualWarmupScheduler
 from albumentations.pytorch import ToTensorV2 as ToTensor
 
@@ -96,7 +99,7 @@ class Classifier_pl(pl.LightningModule):
         optimizer = torch.optim.AdamW(
             self.parameters(),
             lr=self.start_learning_rate,
-            # weight_decay=5e-2,
+            weight_decay=1e-3,
         )
 
         verbose = True
@@ -146,6 +149,48 @@ class Classifier_pl(pl.LightningModule):
         loss = self.loss_fn(preds, gts)
         self.log(f'loss/{stage}', loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
         return {'loss': loss, 'preds': preds}
+
+
+class EERMetric(Metric):
+    # https://torchmetrics.readthedocs.io/en/v0.9.0/pages/implement.html
+    # Set to True if the metric is differentiable else set to False
+    is_differentiable: Optional[bool] = None
+
+    # Set to True if the metric reaches it optimal value when the metric is maximized.
+    # Set to False if it when the metric is minimized.
+    higher_is_better: Optional[bool] = False
+
+    # Set to True if the metric during 'update' requires access to the global metric
+    # state for its calculations. If not, setting this to False indicates that all
+    # batch states are independent and we will optimize the runtime of 'forward'
+    full_state_update: bool = True
+
+    def __init__(self) -> None:
+        super(EERMetric, self).__init__()
+        self.roc = torchmetrics.ROC(task='binary')
+        self.add_state("target", default=torch.Tensor(), dist_reduce_fx="cat")
+        self.add_state("imposter", default=torch.Tensor(), dist_reduce_fx="cat")
+
+    def update(self, preds: torch.Tensor, gts: torch.Tensor):
+        assert preds.shape == gts.shape
+
+        print(176, gts.squeeze() == 1)
+        print(177, gts.squeeze())
+        index = torch.nonzero(gts).nonzero(as_tuple=False)  # TODO: why?
+        print(179, index)
+        index = torch.nonzero(gts.squeeze()).nonzero(as_tuple=False)
+        print(181, index)
+
+        self.target = torch.cat((self.target, target), dim=0)
+
+    def compute(self):
+        pass
+        # fpr, tpr, thresholds = self.roc(self.preds, self.target.to(torch.int64))
+        # eer = 1 - tpr[torch.argmax(torch.Tensor(tpr > 1 - fpr).to(torch.int64))]
+        # print(175, eer)
+        # self.preds, self.target = torch.Tensor(), torch.Tensor()
+        # self.reset()
+        # return eer
 
 
 class MetricSMPCallback(pl.Callback):

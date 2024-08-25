@@ -11,7 +11,8 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 
 from src import BASE_DIR, AVAIL_GPUS, SEED, NUM_WORKERS, glob_search, CustomDataset, Classifier_pl, MetricSMPCallback, \
-    CustomNet
+    CustomNet, plt_show_img
+from src.utils_pl import EERMetric
 
 # DATASET
 DATASET_DIR = Path('/home/iamsvp/data/eye/EyesDataset/marked/')
@@ -26,20 +27,25 @@ logdir = BASE_DIR / 'logs/'
 logdir.mkdir(parents=True, exist_ok=True)
 
 EPOCHS = 500
-start_learning_rate = 1e-2
-BATCH_SIZE = int(len(train_imgs) / 2 + 1) if AVAIL_GPUS else 1
+start_learning_rate = 1e-3
+BATCH_SIZE = 10 if AVAIL_GPUS else 1
 DEVICE = 'cuda' if AVAIL_GPUS else 'cpu'
 MODE = "classification"
 
 # AUGMENTATIONS
 train_transforms = [
-    A.HorizontalFlip(p=0.5),
+    A.PixelDropout(dropout_prob=0.1, drop_value=None, p=1),
     A.Sharpen(p=0.2),
     A.CLAHE(p=0.3),
-    A.PixelDropout(p=0.2),
-    A.RandomBrightnessContrast(p=0.3),
-    A.RandomGamma(p=0.3),
-    A.Rotate(p=0.5, limit=(-20, 20)),
+    A.RandomBrightnessContrast(p=0.5),
+    A.RandomGamma(p=0.5),
+    A.Blur(p=0.5),
+    A.OneOf([
+        A.ElasticTransform(p=0.3),
+        A.GridDistortion(p=0.7),
+    ], p=0.5),
+    A.HorizontalFlip(p=0.5),
+    A.Rotate(p=1, limit=(-45, 45)),
 ]
 
 val_transforms = [
@@ -50,17 +56,20 @@ val_transforms = [
 train = CustomDataset(imgs=train_imgs, labels=train_labels, mode=MODE, augmentation=train_transforms)
 val = CustomDataset(imgs=val_imgs, labels=val_labels, mode=MODE, augmentation=val_transforms)
 
-train_loader = DataLoader(train, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS, drop_last=False)
-val_loader = DataLoader(val, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS, drop_last=False)
+train_loader = DataLoader(train, batch_size=BATCH_SIZE, num_workers=NUM_WORKERS, shuffle=True)
+val_loader = DataLoader(val, batch_size=BATCH_SIZE, num_workers=NUM_WORKERS, shuffle=False)
 
 ''' for checking augmentations
-for idx, (imgs_t, labels_t) in enumerate(train_loader):
+train_double = CustomDataset(imgs=train_imgs, labels=train_labels, mode=MODE, augmentation=None)
+train_double_loader = DataLoader(train_double, batch_size=BATCH_SIZE, num_workers=NUM_WORKERS, shuffle=False)
+for idx, ((imgs_t, labels_t), (imgs_t_d, labels_t_d)) in enumerate(zip(train_loader, train_double_loader)):
     if idx > 10:
         exit()
-    print(62, idx, imgs_t.shape, labels_t.shape)
-    img_n = (((imgs_t[0] * 0.13769661157967297 + 0.5479156433505469)).cpu()).permute(1, 2, 0).numpy()
-    label = labels_t[0].cpu().item()
-    plt_show_img(img_n, title=label, add_coef=True, mode='cv2')
+    assert labels_t == labels_t_d
+    img = (((imgs_t[0] * 0.13769661157967297 + 0.5479156433505469)).cpu()).permute(1, 2, 0).numpy()
+    img_d = (((imgs_t_d[0] * 0.13769661157967297 + 0.5479156433505469)).cpu()).permute(1, 2, 0).numpy()
+    concat_img = np.concatenate((img_d, img), axis=1)
+    plt_show_img(concat_img, title=labels_t[0].cpu().item(), add_coef=True, mode='cv2')
 exit()
 # '''
 
@@ -73,6 +82,7 @@ metrics_callback = MetricSMPCallback(threshold=None, mode=MODE, metrics={
     'precision': torchmetrics.classification.Precision(task="binary").to(device=DEVICE),
     'recall': torchmetrics.classification.Recall(task="binary").to(device=DEVICE),
     'F1score': torchmetrics.classification.F1Score(task="binary").to(device=DEVICE),
+    'EERscore': EERMetric().to(device=DEVICE),
 })
 best_loss_saver = ModelCheckpoint(
     mode='min', save_top_k=1, save_last=True, monitor='loss/validation',
@@ -88,7 +98,6 @@ model = CustomNet(activation=nn.GELU, mode=MODE)
 # model = EyeClassifier()
 model_pl = Classifier_pl(
     model=model,
-    # loss_fn=torch.nn.HuberLoss(),
     loss_fn=torch.nn.CrossEntropyLoss(),
     start_learning_rate=start_learning_rate,
     max_epochs=EPOCHS
