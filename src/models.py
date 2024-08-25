@@ -1,73 +1,89 @@
-from collections import OrderedDict
+from typing import Union, List
 
+import cv2
 import torch
 from torch import nn
+import albumentations as A
+
+from src import plt_show_img
+from src.utils_pl import final_transforms
 
 
-class EyeClassifier(nn.Module):
-    def __init__(self, activation=nn.GELU()):
-        super().__init__()
-        self.conv = nn.Sequential(OrderedDict([
-            # Conv-1
-            ("conv1", nn.Conv2d(in_channels=1, out_channels=128, kernel_size=5, stride=1, padding=2)),
-            ("activation1", activation),
-            ("maxPool1", nn.MaxPool2d(3, 1)),
+class CustomNet(nn.Module):
+    def __init__(self, in_channels=1, activation=nn.ReLU):
+        super(CustomNet, self).__init__()
 
-            # Conv-2
-            ("batchNorm2", nn.BatchNorm2d(128, affine=True)),
-            ("conv2", nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1)),
-            ("activation2", activation),
-            ("maxPool2", nn.MaxPool2d(3, 1)),
+        self.block1 = self._make_block(in_channels, 16, activation)
+        self.block2 = self._make_block(16 + 1, 64, activation)  # +1 cause residual
+        self.block3 = self._make_block(64 + 1, 32, activation)  # +1 cause residual
+        self.block4 = self._make_block(32 + 1, 16, activation)  # +1 cause residual
+        self.fc = nn.Sequential(
+            nn.Flatten(1),
+            nn.Dropout(p=0.3),
+            nn.Linear(16 * 24 * 24, 1),
+            nn.Sigmoid(),  # regression (probabilities)
+        )
 
-            # Conv-3
-            ("batchNorm3", nn.BatchNorm2d(128, affine=True)),
-            ("conv3", nn.Conv2d(in_channels=128, out_channels=96, kernel_size=3, stride=1, padding=1)),
-            ("activation3", activation),
-            ("maxPool3", nn.MaxPool2d(3, 1)),
-
-            # Conv-4
-            ("batchNorm4", nn.BatchNorm2d(96, affine=True)),
-            ("conv4", nn.Conv2d(in_channels=96, out_channels=96,
-                                kernel_size=3, stride=1, padding=0)),
-            ("activation4", activation),
-            ("maxPool4", nn.MaxPool2d(3, 1)),
-        ]))
-        self.global_pool = nn.AdaptiveMaxPool2d(1, return_indices=False)
-        self.head = nn.Sequential(OrderedDict([
-            # FC-1
-            ("dropout1", nn.Dropout(p=0.2)),
-            ("fc1", nn.Linear(96, 80)),
-            ("activation1", activation),
-
-            # FC-2
-            ("dropout2", nn.Dropout(p=0.2)),
-            ("fc2", nn.Linear(80, 64)),
-            ("activation2", activation),
-
-            # FC-3
-            ("dropout3", nn.Dropout(p=0.2)),
-            ("fc3", nn.Linear(64, 64)),
-            ("activation3", activation),
-
-            # FC-4
-            ("fc4", nn.Linear(64, 32)),
-            ("activation4", activation),
-
-            # Classifier
-            ("classifier", nn.Linear(32, 1))
-        ]))
+    def _make_block(self, in_channels, out_channels, activation):
+        block = nn.Sequential(
+            nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(out_channels),
+            activation(),
+        )
+        return block
 
     def forward(self, x):
-        x = self.conv(x)
-        x = self.global_pool(x)
-        x = torch.flatten(x, 1)
-        x = self.head(x)
-        x = x.squeeze()
-        return x
+        block1 = self.block1(x)
+        block2 = self.block2(torch.cat((x, block1), 1))  # residual
+        block3 = self.block3(torch.cat((x, block2), 1))
+        block4 = self.block4(torch.cat((x, block3), 1))
+        fc = self.fc(block4)
+        return fc
+
+
+class OpenEyesClassificator:
+    def __init__(self,
+                 pretrained: str,
+                 device: str = "cuda",
+                 augmentation: Union[List, None] = None,
+                 ):
+        if augmentation is None:
+            augmentation = []
+        augmentation.extend(final_transforms)
+        self.augmentation = A.Compose(augmentation)
+        self.device = device
+        self.model = self.load_model(pretrained)
+        self.model.eval()
+
+    def load_model(self, path) -> nn.Module:
+        state_dict = torch.load(str(path))['state_dict']
+        remove_prefix = 'model.'
+        state_dict = {k[len(remove_prefix):] if k.startswith(remove_prefix) else k: v for k, v in state_dict.items()}
+        model = CustomNet()
+        model.load_state_dict(state_dict)
+        model.to(self.device)
+        return model
+
+    def get_tensor(self, inpIm: str) -> torch.Tensor:  # inference
+        image = cv2.imread(str(inpIm), cv2.IMREAD_GRAYSCALE)
+        tensor = self.augmentation(image=image)['image']
+        return tensor.unsqueeze(0).to(self.device)
+
+    @torch.no_grad()
+    def predict(self, inpIm: str) -> float:  # inference
+        x = self.get_tensor(inpIm)
+        is_open_score = self.model(x)
+        return is_open_score.item()
 
 
 if __name__ == '__main__':  # testing
-    x = torch.rand((1, 3, 62, 62))
-    for model in [ONet(), ResNet18()]:
-        out = model(x)
-        print(x.shape, out.shape)
+    x = torch.rand((1, 1, 24, 24))
+    # for model in [OpenEyesClassificator()]:
+    #     out = model(x)
+    #     print(75, x.shape, out.shape)
+
+    model = OpenEyesClassificator(
+        pretrained="/home/iamsvp/PycharmProjects/open-closed_eyes_classifier/logs/eyes_classifier/version_1/checkpoints/epoch=114-val_loss=0.9930.ckpt")
+    inpIm = "/home/iamsvp/data/eye/EyesDataset/0/000001.jpg"
+    result = model.predict(inpIm)
+    plt_show_img(cv2.imread(inpIm, cv2.IMREAD_GRAYSCALE), add_coef=True, title=result)
