@@ -1,10 +1,16 @@
+import io
 import cv2
 import torch
+import random
+import numpy as np
+import seaborn as sns
 from pathlib import Path
 import albumentations as A
 from typing import List, Tuple
 import pytorch_lightning as pl
+import matplotlib.pyplot as plt
 from torch.utils.data import Dataset
+from sklearn.metrics import confusion_matrix
 from warmup_scheduler import GradualWarmupScheduler
 from albumentations.pytorch import ToTensorV2 as ToTensor
 
@@ -20,6 +26,7 @@ max_width=24    max_height=24   widths_median=24.0      heights_median=24.0
 
 # ''' ALBUMENTATION
 final_transforms = [
+    A.Resize(height=24, width=24, always_apply=True),  # constant window size
     A.Normalize(
         mean=0.5479156433505469,
         std=0.13769661157967297,
@@ -63,6 +70,7 @@ class Classifier_pl(pl.LightningModule):
             *args,
             loss_fn=torch.nn.CrossEntropyLoss(),
             start_learning_rate=1e-3,
+            warmup_epochs=3,
             checkpoint=None,
             **kwargs):
         super().__init__(*args, **kwargs)
@@ -73,6 +81,7 @@ class Classifier_pl(pl.LightningModule):
         self.loss_fn = loss_fn
         self.save_hyperparameters(ignore=['model', 'loss_fn'])
         self.max_epochs = max_epochs
+        self.warmup_epochs = warmup_epochs
 
     def forward(self, img):
         pred = self.model(img)
@@ -85,12 +94,11 @@ class Classifier_pl(pl.LightningModule):
             # weight_decay=5e-2,
         )
 
-        warmup_epochs = 5
         verbose = True
         if self.max_epochs:
             lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
                 optimizer,
-                T_max=self.max_epochs - warmup_epochs,
+                T_max=self.max_epochs - self.warmup_epochs,
                 eta_min=0,
                 verbose=verbose)
         else:
@@ -103,10 +111,10 @@ class Classifier_pl(pl.LightningModule):
         warmup_scheduler = GradualWarmupScheduler(
             optimizer,
             multiplier=1,
-            total_epoch=warmup_epochs,
+            total_epoch=self.warmup_epochs,
             after_scheduler=lr_scheduler
         )
-        return {"optimizer": optimizer, "lr_scheduler": warmup_scheduler, "monitor": 'val_loss'}
+        return {"optimizer": optimizer, "interval": "epoch", "lr_scheduler": warmup_scheduler, "monitor": 'val_loss'}
 
     def train_dataloader(self):
         return self.loader['train']
@@ -126,9 +134,55 @@ class Classifier_pl(pl.LightningModule):
         return preds
 
     def _shared_step(self, batch, stage):
-        imgs, labels = batch
-        gts = labels.squeeze(1)
+        imgs, gts = batch
         preds = self.forward(imgs)
         loss = self.loss_fn(preds, gts)
         self.log(f'loss/{stage}', loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
         return {'loss': loss, 'preds': preds}
+
+
+class MetricSMPCallback(pl.Callback):
+    def __init__(self, metrics, activation=None,
+                 log_img: bool = False,
+                 save_img: bool = False,
+                 threshold: float = 0.5,
+                 n_img_check_per_epoch_validation: int = 0,
+                 n_img_check_per_epoch_train: int = 0,
+                 ) -> None:
+        self.metrics = metrics
+        self.threshold = threshold
+        if activation is not None:
+            self.activation = activation
+        else:
+            self.activation = torch.nn.Identity()
+        self.log_img = log_img
+        self.save_img = save_img
+        self.n_img_check_per_epoch_validation = n_img_check_per_epoch_validation
+        self.n_img_check_per_epoch_train = n_img_check_per_epoch_train
+
+    @torch.no_grad()
+    def _get_metrics(self, preds, gts, trainer):
+        metric_results = {k: dict() for k in self.metrics}
+        labels = self.activation(preds)
+        preds = (labels >= self.threshold).to(torch.int8)
+        for m_name, metric in self.metrics.items():
+            metric_results[m_name] = round(metric(preds, gts).item(), 4)
+        return metric_results
+
+    @torch.no_grad()
+    def _on_shared_batch_end(self, trainer, outputs, batch, batch_idx, stage) -> None:
+        imgs, gts = batch
+        preds = self.activation(outputs['preds'])
+        metrics = self._get_metrics(preds=preds, gts=gts, trainer=trainer)
+        for m_name, m_val in metrics.items():
+            m_title = f'{m_name}/{stage}'
+            trainer.model.log(m_title, m_val, on_step=False, on_epoch=True)
+
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx) -> None:
+        self._on_shared_batch_end(trainer, outputs, batch, batch_idx, stage='train')
+
+    def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx) -> None:
+        self._on_shared_batch_end(trainer, outputs, batch, batch_idx, stage='validation')
+
+    def on_test_batch_end(self, trainer, pl_module, outputs, batch, batch_idx) -> None:
+        self._on_shared_batch_end(trainer, outputs, batch, batch_idx, stage='test')
