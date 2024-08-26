@@ -15,7 +15,7 @@ from src import BASE_DIR, AVAIL_GPUS, SEED, NUM_WORKERS, glob_search, CustomData
 from src.utils_pl import EERMetric
 
 # DATASET
-DATASET_DIR = Path('/home/iamsvp/data/eye/EyesDataset/marked/')
+DATASET_DIR = Path('/home/vid/hdd/datasets/EyesDataset/marked/')
 imgs = glob_search(DATASET_DIR)
 labels = [1 if p.parent.name == 'open' else 0 for p in imgs]  # according to the problem conditions
 train_imgs, val_imgs, train_labels, val_labels = train_test_split(imgs, labels, test_size=0.2, random_state=SEED)
@@ -28,7 +28,7 @@ logdir.mkdir(parents=True, exist_ok=True)
 
 EPOCHS = 500
 start_learning_rate = 1e-3
-BATCH_SIZE = 10 if AVAIL_GPUS else 1
+BATCH_SIZE = 70000 if AVAIL_GPUS else 1
 DEVICE = 'cuda' if AVAIL_GPUS else 'cpu'
 MODE = "classification"
 
@@ -78,10 +78,10 @@ tb_logger = TensorBoardLogger(save_dir=logdir, name=EXPERIMENT_NAME)
 lr_monitor = LearningRateMonitor(logging_interval='epoch')
 # METRICS
 metrics_callback = MetricSMPCallback(threshold=None, mode=MODE, metrics={
-    'accuracy': torchmetrics.classification.Accuracy(task="binary").to(device=DEVICE),
-    'precision': torchmetrics.classification.Precision(task="binary").to(device=DEVICE),
-    'recall': torchmetrics.classification.Recall(task="binary").to(device=DEVICE),
-    'F1score': torchmetrics.classification.F1Score(task="binary").to(device=DEVICE),
+    # 'accuracy': torchmetrics.classification.Accuracy(task="binary").to(device=DEVICE),
+    # 'precision': torchmetrics.classification.Precision(task="binary").to(device=DEVICE),
+    # 'recall': torchmetrics.classification.Recall(task="binary").to(device=DEVICE),
+    # 'F1score': torchmetrics.classification.F1Score(task="binary").to(device=DEVICE),
     'EERscore': EERMetric().to(device=DEVICE),
 })
 best_loss_saver = ModelCheckpoint(
@@ -89,9 +89,13 @@ best_loss_saver = ModelCheckpoint(
     auto_insert_metric_name=False, filename='epoch={epoch:02d}-val_loss={loss/validation:.4f}',
 )
 best_metric_saver = ModelCheckpoint(
-    mode='max', save_top_k=1, save_last=False, monitor='F1score/validation',
-    auto_insert_metric_name=False, filename='epoch={epoch:02d}-val_f1score={F1score/validation:.4f}',
+    mode='min', save_top_k=1, save_last=False, monitor='EERscore/validation',
+    auto_insert_metric_name=False, filename='epoch={epoch:02d}-val_eerscore={EERscore/validation:.4f}',
 )
+# best_metric_saver = ModelCheckpoint(
+#     mode='max', save_top_k=1, save_last=False, monitor='F1score/validation',
+#     auto_insert_metric_name=False, filename='epoch={epoch:02d}-val_f1score={F1score/validation:.4f}',
+# )
 
 # MODEL
 model = CustomNet(activation=nn.GELU, mode=MODE)
