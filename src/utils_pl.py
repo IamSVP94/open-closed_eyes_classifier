@@ -99,7 +99,7 @@ class Classifier_pl(pl.LightningModule):
         optimizer = torch.optim.AdamW(
             self.parameters(),
             lr=self.start_learning_rate,
-            weight_decay=1e-3,
+            # weight_decay=1e-3,
         )
 
         verbose = True
@@ -168,26 +168,22 @@ class EERMetric(Metric):
 
     def __init__(self) -> None:
         super(EERMetric, self).__init__()
-        self.add_state("target", default=torch.Tensor(), dist_reduce_fx="mean")
-        self.add_state("imposter", default=torch.Tensor(), dist_reduce_fx="mean")
-        # self.roc = torchmetrics.ROC(task='binary')
+        self.add_state("targets", default=torch.Tensor(), dist_reduce_fx="cat", persistent=True)
+        self.add_state("imposters", default=torch.Tensor(), dist_reduce_fx="cat", persistent=True)
 
     def update(self, preds: torch.Tensor, gts: torch.Tensor):
-        # assert preds.shape == gts.shape
         target_index = torch.where(gts == 1)[0]  # open eye
         imposter_index = torch.where(gts == 0)[0]  # closed eye
-        target = preds[target_index, 1]
-        imposter = preds[imposter_index, 1]
-        self.target = torch.cat((self.target, target), dim=0)
-        self.imposter = torch.cat((self.imposter, imposter), dim=0)
-        print(183, self.target.shape, self.imposter.shape)
+        target = preds[target_index]
+        imposter = preds[imposter_index]
+        self.targets = torch.cat((self.targets, target), dim=0)
+        self.imposters = torch.cat((self.imposters, imposter), dim=0)
 
     def compute(self):
-        print(185, self.target.shape, self.imposter.shape)
-        min_score = torch.min(torch.min(self.target), torch.min(self.imposter))
-        max_score = torch.max(torch.max(self.target), torch.max(self.imposter))
+        min_score = torch.min(torch.min(self.targets), torch.min(self.imposters))
+        max_score = torch.max(torch.max(self.targets), torch.max(self.imposters))
 
-        n_tars, n_imps = len(self.target), len(self.imposter)
+        n_tars, n_imps = len(self.targets), len(self.imposters)
         N = 100
 
         fars, frrs, dists = torch.zeros((N,)), torch.zeros((N,)), torch.zeros((N,))
@@ -195,8 +191,8 @@ class EERMetric(Metric):
         eer = 0
 
         for i, dist in enumerate(torch.linspace(min_score, max_score, N)):
-            far = torch.sum(self.imposter > dist) / n_imps
-            frr = torch.sum(self.target <= dist) / n_tars
+            far = torch.sum(self.imposters > dist) / n_imps
+            frr = torch.sum(self.targets <= dist) / n_tars
             fars[i] = far
             frrs[i] = frr
             dists[i] = dist
@@ -204,7 +200,7 @@ class EERMetric(Metric):
             k = torch.abs(far - frr)
             if k < mink:
                 mink = k
-            eer = (far + frr) / 2
+                eer = (far + frr) / 2
         return eer
 
 
@@ -230,7 +226,8 @@ class MetricSMPCallback(pl.Callback):
             # preds = torch.argmax(labels, dim=1).to(torch.float32).unsqueeze(1)
             preds = labels
         elif self.mode == 'regression':
-            preds = (labels >= self.threshold).to(torch.int8)
+            # preds = (labels >= self.threshold).to(torch.int8)
+            preds = labels
         # print(166, preds, gts)
         # print(167, preds.shape, gts.shape)
         for m_name, metric in self.metrics.items():
