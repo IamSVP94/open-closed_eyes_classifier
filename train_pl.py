@@ -15,22 +15,31 @@ from src import BASE_DIR, AVAIL_GPUS, SEED, NUM_WORKERS, glob_search, CustomData
 from src.utils_pl import EERMetric
 
 # DATASET
-DATASET_DIR = Path('/home/vid/hdd/datasets/EyesDataset/marked/')
+DATASET_DIR = Path('/home/vid/hdd/datasets/EyesDataset/marked_splitted/')
 imgs = glob_search(DATASET_DIR)
-labels = [1 if p.parent.name == 'open' else 0 for p in imgs]  # according to the problem conditions
-train_imgs, val_imgs, train_labels, val_labels = train_test_split(imgs, labels, test_size=0.2, random_state=SEED)
-print(f'train: {len(train_imgs)}, val: {len(val_imgs)}')
+
+train_imgs, train_labels = [], []
+val_imgs, val_labels = [], []
+for i_path in imgs:
+    label = 1 if "open" in i_path.parent.name else 0
+    if "train" in i_path.parts:
+        train_imgs.append(i_path)
+        train_labels.append(label)
+    else:
+        val_imgs.append(i_path)
+        val_labels.append(label)
 
 # PARAMS
 EXPERIMENT_NAME = f'eyes_classifier'
 logdir = BASE_DIR / 'logs/'
 logdir.mkdir(parents=True, exist_ok=True)
 
-EPOCHS = 500
+EPOCHS = 100
 start_learning_rate = 1e-3
-BATCH_SIZE = 70000 if AVAIL_GPUS else 1
+BATCH_SIZE = len(train_imgs) if AVAIL_GPUS else 1
 DEVICE = 'cuda' if AVAIL_GPUS else 'cpu'
-MODE = "classification"
+# MODE = "classification"
+MODE = "regression"
 
 # AUGMENTATIONS
 train_transforms = [
@@ -45,7 +54,7 @@ train_transforms = [
         A.GridDistortion(p=0.7),
     ], p=0.5),
     A.HorizontalFlip(p=0.5),
-    A.Rotate(p=1, limit=(-45, 45)),
+    A.Rotate(p=0.9, limit=(-45, 45)),
 ]
 
 val_transforms = [
@@ -102,7 +111,8 @@ model = CustomNet(activation=nn.GELU, mode=MODE)
 # model = EyeClassifier()
 model_pl = Classifier_pl(
     model=model,
-    loss_fn=torch.nn.CrossEntropyLoss(),
+    # loss_fn=torch.nn.CrossEntropyLoss(),
+    loss_fn=torch.nn.HuberLoss(),
     start_learning_rate=start_learning_rate,
     max_epochs=EPOCHS
 )

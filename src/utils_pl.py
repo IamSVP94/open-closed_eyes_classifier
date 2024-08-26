@@ -99,7 +99,7 @@ class Classifier_pl(pl.LightningModule):
         optimizer = torch.optim.AdamW(
             self.parameters(),
             lr=self.start_learning_rate,
-            # weight_decay=1e-3,
+            weight_decay=1e-3,
         )
 
         verbose = True
@@ -164,13 +164,14 @@ class EERMetric(Metric):
     # Set to True if the metric during 'update' requires access to the global metric
     # state for its calculations. If not, setting this to False indicates that all
     # batch states are independent and we will optimize the runtime of 'forward'
-    full_state_update: bool = True
+    full_state_update: bool = False
 
     def __init__(self) -> None:
         super(EERMetric, self).__init__()
         self.add_state("targets", default=torch.Tensor(), dist_reduce_fx="cat", persistent=True)
         self.add_state("imposters", default=torch.Tensor(), dist_reduce_fx="cat", persistent=True)
 
+    @torch.no_grad()
     def update(self, preds: torch.Tensor, gts: torch.Tensor):
         target_index = torch.where(gts == 1)[0]  # open eye
         imposter_index = torch.where(gts == 0)[0]  # closed eye
@@ -179,6 +180,7 @@ class EERMetric(Metric):
         self.targets = torch.cat((self.targets, target), dim=0)
         self.imposters = torch.cat((self.imposters, imposter), dim=0)
 
+    @torch.no_grad()
     def compute(self):
         min_score = torch.min(torch.min(self.targets), torch.min(self.imposters))
         max_score = torch.max(torch.max(self.targets), torch.max(self.imposters))
