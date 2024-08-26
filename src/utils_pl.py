@@ -144,8 +144,6 @@ class Classifier_pl(pl.LightningModule):
     def _shared_step(self, batch, stage):
         imgs, gts = batch
         preds = self.forward(imgs)
-        if self.model.mode == 'classification':
-            gts = gts.squeeze(dim=1)
         loss = self.loss_fn(preds, gts)
         self.log(f'loss/{stage}', loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
         return {'loss': loss, 'preds': preds}

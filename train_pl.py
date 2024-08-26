@@ -11,11 +11,12 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 
 from src import BASE_DIR, AVAIL_GPUS, SEED, NUM_WORKERS, glob_search, CustomDataset, Classifier_pl, MetricSMPCallback, \
-    CustomNet, plt_show_img
+    CustomNet, plt_show_img, CustomNet_old
 from src.utils_pl import EERMetric
 
 # DATASET
-DATASET_DIR = Path('/home/vid/hdd/datasets/EyesDataset/marked_splitted/')
+# DATASET_DIR = Path('/home/iamsvp/data/eye/EyesDataset/marked_splitted/')
+DATASET_DIR = Path('/home/iamsvp/data/eye/EyesDataset/together_splitted/')
 imgs = glob_search(DATASET_DIR)
 
 train_imgs, train_labels = [], []
@@ -30,11 +31,11 @@ for i_path in imgs:
         val_labels.append(label)
 
 # PARAMS
-EXPERIMENT_NAME = f'eyes_classifier'
+EXPERIMENT_NAME = f'eyes_classifier_full'
 logdir = BASE_DIR / 'logs/'
 logdir.mkdir(parents=True, exist_ok=True)
 
-EPOCHS = 100
+EPOCHS = 200
 start_learning_rate = 1e-3
 BATCH_SIZE = len(train_imgs) if AVAIL_GPUS else 1
 DEVICE = 'cuda' if AVAIL_GPUS else 'cpu'
@@ -107,12 +108,13 @@ best_metric_saver = ModelCheckpoint(
 # )
 
 # MODEL
-model = CustomNet(activation=nn.GELU, mode=MODE)
+model = CustomNet(activation=nn.GELU)
 # model = EyeClassifier()
 model_pl = Classifier_pl(
     model=model,
     # loss_fn=torch.nn.CrossEntropyLoss(),
-    loss_fn=torch.nn.HuberLoss(),
+    # loss_fn=torch.nn.HuberLoss(),
+    loss_fn=torch.nn.MSELoss(),
     start_learning_rate=start_learning_rate,
     max_epochs=EPOCHS
 )
