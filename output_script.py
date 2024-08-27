@@ -1,12 +1,11 @@
-import argparse
-from pathlib import Path
-
 import cv2
 import torch
+import argparse
+from pathlib import Path
 import albumentations as A
-from src.models import CustomNet2
-
 from albumentations.pytorch import ToTensorV2 as ToTensor
+
+from src.models import CustomNet2
 
 
 class OpenEyesClassificator:
@@ -48,7 +47,6 @@ class OpenEyesClassificator:
     def predict(self, inpIm: str) -> float:  # inference
         x = self._get_tensor(inpIm)
         pred = self.model(x)
-        print(51, pred)
         is_open_score = pred.squeeze()[self.target_class_idx]
         return is_open_score.item()
 
