@@ -1,18 +1,15 @@
 import torch
-import numpy as np
-import torchmetrics
+from torch import nn
 from pathlib import Path
 import albumentations as A
 from pytorch_lightning import Trainer
-from torch import nn
 from torch.utils.data import DataLoader
-from sklearn.model_selection import train_test_split
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 
-from src import BASE_DIR, AVAIL_GPUS, SEED, NUM_WORKERS, glob_search, CustomDataset, Classifier_pl, MetricSMPCallback, \
-    CustomNet, plt_show_img, CustomNet_old
+from src.models import CustomNet
 from src.utils_pl import EERMetric
+from src import BASE_DIR, AVAIL_GPUS, NUM_WORKERS, glob_search, CustomDataset, Classifier_pl, MetricSMPCallback
 
 # PARAMS
 EXPERIMENT_NAME = f'RELU_1e-3'
