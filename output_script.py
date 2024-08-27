@@ -59,15 +59,9 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-i', '--img_path', type=str, help='',
-                        required=True,
-                        )
-    parser.add_argument('-w', '--weights_path', type=str, help='',
-                        default='data/customnet2_relu_final_weights.ckpt'
-                        )
-    parser.add_argument('-d', '--device', choices=['cpu', 'cuda'], help='',
-                        default='cuda',
-                        )
+    parser.add_argument('-i', '--img_path', type=str, help='', required=True)
+    parser.add_argument('-w', '--weights_path', type=str, help='', default='data/customnet2_relu_final_weights.ckpt')
+    parser.add_argument('-d', '--device', choices=['cpu', 'cuda'], help='', default='cuda')
     args = parser.parse_args()
 
     assert Path(args.img_path).exists()
