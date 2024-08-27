@@ -7,19 +7,19 @@ from torch.utils.data import DataLoader
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 
-from src.models import CustomNet
+from src.models import CustomNet, CustomNet2, CustomNet0
 from src.utils_pl import EERMetric
 from src import BASE_DIR, AVAIL_GPUS, NUM_WORKERS, glob_search, CustomDataset, Classifier_pl, MetricSMPCallback
 
 # PARAMS
-EXPERIMENT_NAME = f'RELU_1e-3'
+EXPERIMENT_NAME = f'FULL_CustomNet2_RELU_1e-3_weight_decay=1e-2_AdamW'
 EPOCHS = 200
 start_learning_rate = 1e-3
-model = CustomNet(activation=nn.ReLU)
+model = CustomNet2(activation=nn.GELU)
 # TODO: try weight decay
 
 # DATASET
-DATASET_DIR = Path('/home/vid/hdd/datasets/EyesDataset_old/marked_splitted/')
+DATASET_DIR = Path('/home/iamsvp/data/eye/EyesDataset/together_splitted/')
 imgs = glob_search(DATASET_DIR)
 
 train_imgs, train_labels = [], []
@@ -54,7 +54,7 @@ val_transforms = [
 ]
 
 # DATASETS
-BATCH_SIZE = len(train_imgs) if AVAIL_GPUS else 1
+BATCH_SIZE = int(len(train_imgs) / 2) + 1 if AVAIL_GPUS else 1
 DEVICE = 'cuda' if AVAIL_GPUS else 'cpu'
 
 train = CustomDataset(imgs=train_imgs, labels=train_labels, augmentation=train_transforms)

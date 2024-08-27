@@ -4,14 +4,14 @@ from pathlib import Path
 from tqdm import tqdm
 
 from src import glob_search, OpenEyesClassificator
+from src.models import CustomNet2
 
-src_dir = "/home/vid/hdd/datasets/EyesDataset/unmarked/"
-dst_dir = "/home/vid/hdd/datasets/EyesDataset/unmarked_labeled/"
-# weights = "/home/iamsvp/PycharmProjects/open-closed_eyes_classifier/logs/eyes_classifier/version_2/checkpoints/epoch=133-val_f1score=0.9930.ckpt"
-weights = "/home/vid/hdd/projects/PycharmProjects/open-closed_eyes_classifier/logs/eyes_classifier/version_88/checkpoints/epoch=131-val_eerscore=0.0271.ckpt"
+src_dir = "/home/iamsvp/data/eye/EyesDataset/unmarked/"
+dst_dir = "/home/iamsvp/data/eye/EyesDataset/unmarked_labeled/"
+weights = "/home/iamsvp/PycharmProjects/open-closed_eyes_classifier/logs/CustomNet2_RELU_1e-3_weight_decay=1e-2/version_0/checkpoints/epoch=70-val_eerscore=0.0459.ckpt"
 
 dst_dir = Path(dst_dir)
-model = OpenEyesClassificator(mode="regression", pretrained=weights)
+model = OpenEyesClassificator(model=CustomNet2(), pretrained=weights)
 weights = Path(weights)
 
 imgs = glob_search(src_dir, return_pbar=True)

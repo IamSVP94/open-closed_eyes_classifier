@@ -29,7 +29,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument('-s', '--src_dir', type=str,
                         # required=True,
-                        default="/home/vid/hdd/datasets/EyesDataset/marked",
+                        default="/home/iamsvp/data/eye/EyesDataset/unmarked_labeled/epoch=172-val_eerscore=0.0439",
                         help='(required)')
     parser.add_argument('-d', '--dst_dir', type=str, default=None, help='')
     parser.add_argument('-w', '--test_size', type=Union[int, float], default=0.15, help='')

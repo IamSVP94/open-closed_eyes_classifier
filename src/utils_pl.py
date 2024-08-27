@@ -95,7 +95,7 @@ class Classifier_pl(pl.LightningModule):
         optimizer = torch.optim.AdamW(
             self.parameters(),
             lr=self.start_learning_rate,
-            weight_decay=1e-3,
+            weight_decay=1e-2,
         )
 
         verbose = True
@@ -146,8 +146,6 @@ class Classifier_pl(pl.LightningModule):
 
 
 class EERMetric(Metric):
-    # https://torchmetrics.readthedocs.io/en/v0.9.0/pages/implement.html
-    # https://habr.com/ru/articles/317798/
     # Set to True if the metric is differentiable else set to False
     is_differentiable: Optional[bool] = None
 
@@ -158,12 +156,12 @@ class EERMetric(Metric):
     # Set to True if the metric during 'update' requires access to the global metric
     # state for its calculations. If not, setting this to False indicates that all
     # batch states are independent and we will optimize the runtime of 'forward'
-    full_state_update: bool = False
+    full_state_update: bool = True
 
     def __init__(self, target_class_idx=1) -> None:
         super(EERMetric, self).__init__()
-        self.add_state("targets", default=torch.Tensor(), dist_reduce_fx="cat", persistent=True)
-        self.add_state("imposters", default=torch.Tensor(), dist_reduce_fx="cat", persistent=True)
+        self.add_state("targets", default=torch.Tensor(), dist_reduce_fx="cat")
+        self.add_state("imposters", default=torch.Tensor(), dist_reduce_fx="cat")
         self.target_class_idx = target_class_idx
 
     @torch.no_grad()
@@ -177,15 +175,22 @@ class EERMetric(Metric):
 
     @torch.no_grad()
     def compute(self):
-        min_score = torch.min(torch.min(self.targets), torch.min(self.imposters))
-        max_score = torch.max(torch.max(self.targets), torch.max(self.imposters))
+        if self.imposters.nelement() == 0:
+            imposters_min, imposters_max = torch.tensor(float('inf')), torch.tensor(0)
+        else:
+            imposters_min, imposters_max = torch.min(self.imposters), torch.max(self.imposters)
 
+        if self.targets.nelement() == 0:
+            targets_min, targets_max = torch.tensor(float('inf')), torch.tensor(0)
+        else:
+            targets_min, targets_max = torch.min(self.targets), torch.max(self.targets)
+        min_score, max_score = torch.min(imposters_min, targets_min), torch.min(imposters_max, targets_max)
         n_tars, n_imps = len(self.targets), len(self.imposters)
         N = 100
 
         fars, frrs, dists = torch.zeros((N,)), torch.zeros((N,)), torch.zeros((N,))
         mink = torch.tensor(float('inf'))
-        eer = 0
+        eer = torch.tensor(0)
 
         for i, dist in enumerate(torch.linspace(min_score, max_score, N)):
             far = torch.sum(self.imposters > dist) / n_imps
