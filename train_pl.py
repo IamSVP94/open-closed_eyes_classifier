@@ -15,9 +15,9 @@ from src import BASE_DIR, AVAIL_GPUS, SEED, NUM_WORKERS, glob_search, CustomData
 from src.utils_pl import EERMetric
 
 # PARAMS
-EXPERIMENT_NAME = f'eyes_classifier_RELU'
+EXPERIMENT_NAME = f'RELU_1e-3'
 EPOCHS = 200
-start_learning_rate = 1e-2
+start_learning_rate = 1e-3
 model = CustomNet(activation=nn.ReLU)
 # TODO: try weight decay
 
