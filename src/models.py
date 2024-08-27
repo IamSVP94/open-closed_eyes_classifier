@@ -129,46 +129,6 @@ class CustomNet2(nn.Module):
         fc2 = self.fc2(fc1)
         return fc2
 
-
-class OpenEyesClassificator:
-    def __init__(self,
-                 pretrained: str,
-                 device: str = "cuda",
-                 augmentation: Union[List, None] = None,
-                 target_class_idx: int = 1,
-                 model: nn.Module = CustomNet(),
-                 ):
-        self.device = device
-        self.target_class_idx = target_class_idx
-        self.model = self.load_model(model, pretrained)
-        self.model.eval()
-
-        if augmentation is None:
-            augmentation = []
-        augmentation.extend(final_transforms)
-        self.augmentation = A.Compose(augmentation)
-
-    def load_model(self, model: nn.Module, path: str) -> nn.Module:
-        state_dict = torch.load(str(path), weights_only=False)['state_dict']
-        remove_prefix = 'model.'
-        state_dict = {k[len(remove_prefix):] if k.startswith(remove_prefix) else k: v for k, v in state_dict.items()}
-        model.load_state_dict(state_dict)
-        model.to(self.device)
-        return model
-
-    def get_tensor(self, inpIm: str) -> torch.Tensor:  # inference
-        image = cv2.imread(str(inpIm), cv2.IMREAD_GRAYSCALE)
-        tensor = self.augmentation(image=image)['image']
-        return tensor.unsqueeze(0).to(self.device)
-
-    @torch.no_grad()
-    def predict(self, inpIm: str) -> float:  # inference
-        x = self.get_tensor(inpIm)
-        pred = self.model(x)
-        is_open_score = pred.squeeze()[self.target_class_idx]
-        return is_open_score.item()
-
-
 if __name__ == '__main__':  # testing
     x = torch.rand((1, 1, 24, 24))
     for model in [CustomNet()]:
