@@ -55,7 +55,7 @@ class CustomNet_old(nn.Module):
 
 
 class CustomNet(nn.Module):
-    def __init__(self, in_channels=1, activation=nn.GELU):
+    def __init__(self, in_channels=1, activation=nn.GELU, n_classes=2):
         super(CustomNet, self).__init__()
         self.block1 = self._make_block(in_channels, 16, activation)
         self.block2 = self._make_block(16 + 1, 64, activation)  # +1 cause residual
@@ -75,7 +75,7 @@ class CustomNet(nn.Module):
         )
         self.fc2 = nn.Sequential(
             nn.Dropout(p=0.3),
-            nn.Linear(16, 1),
+            nn.Linear(16, n_classes),  # n_classes
             nn.Sigmoid(),
         )
 

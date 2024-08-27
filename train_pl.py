@@ -14,9 +14,15 @@ from src import BASE_DIR, AVAIL_GPUS, SEED, NUM_WORKERS, glob_search, CustomData
     CustomNet, plt_show_img, CustomNet_old
 from src.utils_pl import EERMetric
 
+# PARAMS
+EXPERIMENT_NAME = f'eyes_classifier_RELU'
+EPOCHS = 200
+start_learning_rate = 1e-2
+model = CustomNet(activation=nn.ReLU)
+# TODO: try weight decay
+
 # DATASET
-# DATASET_DIR = Path('/home/iamsvp/data/eye/EyesDataset/marked_splitted/')
-DATASET_DIR = Path('/home/iamsvp/data/eye/EyesDataset/together_splitted/')
+DATASET_DIR = Path('/home/vid/hdd/datasets/EyesDataset_old/marked_splitted/')
 imgs = glob_search(DATASET_DIR)
 
 train_imgs, train_labels = [], []
@@ -29,18 +35,6 @@ for i_path in imgs:
     else:
         val_imgs.append(i_path)
         val_labels.append(label)
-
-# PARAMS
-EXPERIMENT_NAME = f'eyes_classifier_full'
-logdir = BASE_DIR / 'logs/'
-logdir.mkdir(parents=True, exist_ok=True)
-
-EPOCHS = 200
-start_learning_rate = 1e-3
-BATCH_SIZE = len(train_imgs) if AVAIL_GPUS else 1
-DEVICE = 'cuda' if AVAIL_GPUS else 'cpu'
-# MODE = "classification"
-MODE = "regression"
 
 # AUGMENTATIONS
 train_transforms = [
@@ -63,8 +57,11 @@ val_transforms = [
 ]
 
 # DATASETS
-train = CustomDataset(imgs=train_imgs, labels=train_labels, mode=MODE, augmentation=train_transforms)
-val = CustomDataset(imgs=val_imgs, labels=val_labels, mode=MODE, augmentation=val_transforms)
+BATCH_SIZE = len(train_imgs) if AVAIL_GPUS else 1
+DEVICE = 'cuda' if AVAIL_GPUS else 'cpu'
+
+train = CustomDataset(imgs=train_imgs, labels=train_labels, augmentation=train_transforms)
+val = CustomDataset(imgs=val_imgs, labels=val_labels, augmentation=val_transforms)
 
 train_loader = DataLoader(train, batch_size=BATCH_SIZE, num_workers=NUM_WORKERS, shuffle=True)
 val_loader = DataLoader(val, batch_size=BATCH_SIZE, num_workers=NUM_WORKERS, shuffle=False)
@@ -83,17 +80,17 @@ for idx, ((imgs_t, labels_t), (imgs_t_d, labels_t_d)) in enumerate(zip(train_loa
 exit()
 # '''
 
-# LOGGER
+# LOGGER CALLBACK
+logdir = BASE_DIR / 'logs/'
+logdir.mkdir(parents=True, exist_ok=True)
+
 tb_logger = TensorBoardLogger(save_dir=logdir, name=EXPERIMENT_NAME)
 lr_monitor = LearningRateMonitor(logging_interval='epoch')
-# METRICS
-metrics_callback = MetricSMPCallback(threshold=None, mode=MODE, metrics={
-    # 'accuracy': torchmetrics.classification.Accuracy(task="binary").to(device=DEVICE),
-    # 'precision': torchmetrics.classification.Precision(task="binary").to(device=DEVICE),
-    # 'recall': torchmetrics.classification.Recall(task="binary").to(device=DEVICE),
-    # 'F1score': torchmetrics.classification.F1Score(task="binary").to(device=DEVICE),
+# METRICS CALLBACK
+metrics_callback = MetricSMPCallback(metrics={
     'EERscore': EERMetric().to(device=DEVICE),
 })
+# WEIGHTS SAVER CALLBACK
 best_loss_saver = ModelCheckpoint(
     mode='min', save_top_k=1, save_last=True, monitor='loss/validation',
     auto_insert_metric_name=False, filename='epoch={epoch:02d}-val_loss={loss/validation:.4f}',
@@ -102,19 +99,11 @@ best_metric_saver = ModelCheckpoint(
     mode='min', save_top_k=1, save_last=False, monitor='EERscore/validation',
     auto_insert_metric_name=False, filename='epoch={epoch:02d}-val_eerscore={EERscore/validation:.4f}',
 )
-# best_metric_saver = ModelCheckpoint(
-#     mode='max', save_top_k=1, save_last=False, monitor='F1score/validation',
-#     auto_insert_metric_name=False, filename='epoch={epoch:02d}-val_f1score={F1score/validation:.4f}',
-# )
 
 # MODEL
-model = CustomNet(activation=nn.GELU)
-# model = EyeClassifier()
 model_pl = Classifier_pl(
     model=model,
-    # loss_fn=torch.nn.CrossEntropyLoss(),
-    # loss_fn=torch.nn.HuberLoss(),
-    loss_fn=torch.nn.MSELoss(),
+    loss_fn=torch.nn.CrossEntropyLoss(),
     start_learning_rate=start_learning_rate,
     max_epochs=EPOCHS
 )

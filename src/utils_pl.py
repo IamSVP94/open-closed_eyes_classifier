@@ -44,9 +44,7 @@ final_transforms = [
 
 
 class CustomDataset(Dataset):
-    def __init__(self, imgs: List[str], labels: List[int], mode: str = "regression", augmentation=None) -> None:
-        assert mode in ['classification', 'regression']
-        self.mode = mode
+    def __init__(self, imgs: List[str], labels: List[int], augmentation=None) -> None:
         self.imgs = imgs
         self.labels = labels
 
@@ -60,14 +58,12 @@ class CustomDataset(Dataset):
 
     def __getitem__(self, item: int) -> Tuple:
         img_path = self.imgs[item]
+        label = self.labels[item]
         img = cv2.imread(str(img_path), cv2.IMREAD_UNCHANGED)  # BGR
-        img = self.augmentation(image=img)['image']
-        if self.mode == 'classification':
-            label = torch.Tensor([self.labels[item]]).to(torch.int64)
-        else:
-            label = torch.Tensor([self.labels[item]]).to(torch.float32)
+        img_t = self.augmentation(image=img)['image']
+        label_t = torch.tensor(label).to(torch.int64)
         # apply augmentations
-        return img, label
+        return img_t, label_t
 
 
 class Classifier_pl(pl.LightningModule):
@@ -127,6 +123,13 @@ class Classifier_pl(pl.LightningModule):
     def train_dataloader(self):
         return self.loader['train']
 
+    def _shared_step(self, batch, stage):
+        imgs, gts = batch
+        preds = self.forward(imgs)
+        loss = self.loss_fn(preds, gts)
+        self.log(f'loss/{stage}', loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        return {'loss': loss, 'preds': preds}
+
     def training_step(self, batch, batch_idx):
         return self._shared_step(batch, stage='train')
 
@@ -140,13 +143,6 @@ class Classifier_pl(pl.LightningModule):
         imgs = batch
         preds = self.forward(imgs)
         return preds
-
-    def _shared_step(self, batch, stage):
-        imgs, gts = batch
-        preds = self.forward(imgs)
-        loss = self.loss_fn(preds, gts)
-        self.log(f'loss/{stage}', loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
-        return {'loss': loss, 'preds': preds}
 
 
 class EERMetric(Metric):
@@ -164,17 +160,18 @@ class EERMetric(Metric):
     # batch states are independent and we will optimize the runtime of 'forward'
     full_state_update: bool = False
 
-    def __init__(self) -> None:
+    def __init__(self, target_class_idx=1) -> None:
         super(EERMetric, self).__init__()
         self.add_state("targets", default=torch.Tensor(), dist_reduce_fx="cat", persistent=True)
         self.add_state("imposters", default=torch.Tensor(), dist_reduce_fx="cat", persistent=True)
+        self.target_class_idx = target_class_idx
 
     @torch.no_grad()
     def update(self, preds: torch.Tensor, gts: torch.Tensor):
         target_index = torch.where(gts == 1)[0]  # open eye
         imposter_index = torch.where(gts == 0)[0]  # closed eye
-        target = preds[target_index]
-        imposter = preds[imposter_index]
+        target = preds[target_index, self.target_class_idx]
+        imposter = preds[imposter_index, self.target_class_idx]
         self.targets = torch.cat((self.targets, target), dim=0)
         self.imposters = torch.cat((self.imposters, imposter), dim=0)
 
@@ -206,11 +203,8 @@ class EERMetric(Metric):
 
 class MetricSMPCallback(pl.Callback):
     def __init__(self, metrics, activation=None,
-                 threshold: Union[float, None] = 0.5,
-                 mode: str = 'regression',
+                 threshold: Union[float, None] = None,
                  ) -> None:
-        assert mode in ['classification', 'regression']
-        self.mode = mode
         self.metrics = metrics
         self.threshold = threshold
         if activation is not None:
@@ -222,16 +216,9 @@ class MetricSMPCallback(pl.Callback):
     def _get_metrics(self, preds, gts, trainer):
         metric_results = {k: dict() for k in self.metrics}
         labels = self.activation(preds)
-        if self.mode == 'classification':
-            # preds = torch.argmax(labels, dim=1).to(torch.float32).unsqueeze(1)
-            preds = labels
-        elif self.mode == 'regression':
-            # preds = (labels >= self.threshold).to(torch.int8)
-            preds = labels
-        # print(166, preds, gts)
-        # print(167, preds.shape, gts.shape)
+        # preds = labels
         for m_name, metric in self.metrics.items():
-            result = metric(preds, gts)
+            result = metric(labels, gts)
             metric_results[m_name] = round(result.item(), 4)
             # print(170, m_name, metric_results[m_name])
         return metric_results
