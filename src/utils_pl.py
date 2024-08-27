@@ -1,19 +1,11 @@
-import io
 import cv2
 import torch
-import random
-import numpy as np
-import seaborn as sns
 from pathlib import Path
 import albumentations as A
-from typing import List, Tuple, Union, Optional
 import pytorch_lightning as pl
-import matplotlib.pyplot as plt
-import torchmetrics
-from torch.utils.data import Dataset
-from sklearn.metrics import confusion_matrix
 from torchmetrics import Metric
-from torchmetrics.classification.base import _ClassificationTaskWrapper
+from torch.utils.data import Dataset
+from typing import List, Tuple, Union, Optional
 from warmup_scheduler import GradualWarmupScheduler
 from albumentations.pytorch import ToTensorV2 as ToTensor
 
