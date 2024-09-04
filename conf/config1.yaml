@@ -1,0 +1,54 @@
+# https://github.com/ArgoHA/Pytorch-training-pipeline
+
+### COMMON PART
+threads_to_use: 10  # need for multiprocessing
+seed: 42
+num_workers: 15  # work PC
+now_dir: &nowdir ${now:%Y-%m-%d}
+exp: ${exp_name}_${now_dir}
+
+exp_name: baseline
+
+train:
+  ### DATASET PARAMS
+  train_data: /home/vid/hdd/datasets/dataset_B_Eye_Images_splitted/train
+  val_data: /home/vid/hdd/datasets/dataset_B_Eye_Images_splitted/val
+  label_to_name: { 0: "closed", 1: "open" }
+
+  ### LEARNING PARAMS
+  device: cuda
+  img_size: [ 24, 24 ] # (h, w)
+  batch_size: 64
+  epochs: 50
+  use_scheduler: True
+
+  layers_to_train: -1
+
+  ### LOGGING AND SAVING PARAMS
+#  root: /log/train ${exp_name}/models
+#  path_to_save: ${train.root}/output/models/${exp}
+#  vis_path: ${train.root}/output/visualized
+
+#  cudnn_fixed: False
+#  debug_img_processing: False
+
+
+#export: # TensorRT must be done on the inference device
+#  half: False
+#  max_batch_size: 1
+#
+#  model_path: ${train.path_to_save}
+#  path_to_data: ${train.root}/to_test
+#
+#
+#
+## service ###
+#defaults:
+#  - _self_
+#  - override hydra/hydra_logging: disabled
+#  - override hydra/job_logging: disabled
+#
+#hydra:
+#  output_subdir: null
+#  run:
+#    dir: .
